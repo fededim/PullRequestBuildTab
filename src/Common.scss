@@ -1,0 +1,15 @@
+@use "/node_modules/azure-devops-ui/Core/_platformCommon.scss" as devops;
+
+#root {
+    height: 100%;
+    width: 100%;
+    display: flex;
+}
+
+body {
+    background-color: devops.$neutral-2;
+}
+
+.page-content {
+    background-color: devops.$neutral-0;
+}
