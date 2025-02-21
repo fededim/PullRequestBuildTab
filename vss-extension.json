@@ -2,7 +2,7 @@
     "manifestVersion": 1,
     "id": "pr-tabs-build",
     "publisher": "fededim",
-    "version": "0.0.3",
+    "version": "0.0.4",
     "baseUri": "https://localhost:3000",
     "name": "Pull Request Builds tab",
     "description": "An extensions to add a \"Builds\" tab to pull requests showing all the related builds",
@@ -29,7 +29,7 @@
 	"demands": [
         "api-version/3.0"
     ],
-	"scopes": [],
+  "scopes": [ "vso.build", "vso.code" ],
 	"icons": {
         "default": "static/images/logo.png"
     },
