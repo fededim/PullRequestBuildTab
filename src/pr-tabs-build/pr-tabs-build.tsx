@@ -4,9 +4,7 @@ import * as React from "react";
 import {
     getStatusIndicatorData,
     IPipelineItem,
-    PipelineStatus,
-    ReleaseType,
-    ReleaseTypeText,
+    PipelineStatus
 } from "./pr-tabs-build-data";
 
 import * as SDK from "azure-devops-extension-sdk";
@@ -25,6 +23,9 @@ import {
     SortOrder,
     sortItems,
 } from "azure-devops-ui/Table";
+
+import { VssPersona, IIdentityDetailsProvider } from "azure-devops-ui/VssPersona";
+
 import { Ago } from "azure-devops-ui/Ago";
 import { Duration } from "azure-devops-ui/Duration";
 import { Tooltip } from "azure-devops-ui/TooltipEx";
@@ -32,8 +33,9 @@ import { css } from "azure-devops-ui/Util";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
 import { ObservableValue } from "azure-devops-ui/Core/Observable";
 import { Observer } from "azure-devops-ui/Observer";
+import { CoreRestClient } from "azure-devops-extension-api/Core";
 
-import { CommonServiceIds, IProjectPageService, IVssRestClientOptions, IHostNavigationService } from "azure-devops-extension-api";
+import { CommonServiceIds, IProjectPageService, IHostNavigationService } from "azure-devops-extension-api";
 import { BuildRestClient } from "azure-devops-extension-api/Build/BuildClient";
 import { GitRestClient } from "azure-devops-extension-api/Git/GitClient";
 import { PipelinesRestClient } from "azure-devops-extension-api/Pipelines/PipelinesClient";
@@ -44,14 +46,18 @@ import { BuildReason } from "azure-devops-extension-api/Build/Build";
 interface IPullRequestTabGroupState {
     projectContext: any;
     extensionContext: any;
+    hostContext: any;
+    hostNavigationService: any;
     accessToken: string;
 }
 
 export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGroupState> {
 
+    private pipelineItems: IPipelineItem[] = [];
+
     constructor(props: {}) {
         super(props);
-        this.state = { projectContext: undefined, extensionContext: undefined, accessToken: '' };
+        this.state = { projectContext: undefined, extensionContext: undefined, hostContext: undefined, hostNavigationService: undefined, accessToken: '' };
     }
 
 
@@ -71,25 +77,27 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
         }
     }
 
-    runs: any = undefined;
+
+    private navigateTo = (url: string) => {
+        this.state.hostNavigationService.navigate(url);
+    }
+
 
     private async loadProjectContext(): Promise<void> {
         try {
+            const hostNavigationService = await SDK.getService<IHostNavigationService>(CommonServiceIds.HostNavigationService);
             const projectClient = await SDK.getService<IProjectPageService>(CommonServiceIds.ProjectPageService);
-            const hostClient = await SDK.getService<IHostNavigationService>(CommonServiceIds.HostNavigationService);
             const projectContext = await projectClient.getProject();
-            const extensionContext = SDK.getExtensionContext();
+            const extensionContext = await SDK.getExtensionContext();
+            const hostContext = SDK.getHost();
             const accessToken = await SDK.getAccessToken()
 
-            this.setState({ projectContext: projectContext, extensionContext: extensionContext, accessToken: accessToken });
+            this.setState({ projectContext: projectContext, extensionContext: extensionContext, hostContext: hostContext, hostNavigationService: hostNavigationService, accessToken: accessToken });
 
-            // let workItemFormService = await SDK.getService<IWorkItemFormService>(WorkItemTrackingServiceIds.WorkItemFormService);
-            //const options: IVssRestClientOptions = new VssRestClientOptions {  }
-            //const pipelinesClient = getClient(PipelinesRestClient);
             const gitClient = getClient(GitRestClient);
             const buildClient = getClient(BuildRestClient);
 
-            let navRoute = await hostClient.getPageRoute();
+            let navRoute = await hostNavigationService.getPageRoute();
 
             let pullRequestId = Number(navRoute.routeValues.parameters);
             let projectName = navRoute.routeValues.project;
@@ -99,7 +107,6 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             let pullRequestBranch = `refs/pull/${pullRequestId}/merge`;
             let builds = await buildClient.getBuilds(projectName, undefined, undefined, undefined, undefined, undefined, undefined, BuildReason.PullRequest, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, pullRequestBranch, undefined, pullRequest.repository.id, 'TfsGit');
 
-
             let commitIds = builds.map(b => JSON.parse(b.parameters)["system.pullRequest.sourceCommitId"]) as string[];
             let commitsSearchCriteria: any = { ids: commitIds };
 
@@ -107,27 +114,32 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             var commits = await gitClient.getCommits(pullRequest.repository.id, commitsSearchCriteria);
             commits.forEach((c, index) => commitsDictionary[c.commitId] = c);
 
-
-            // let runs = await pipelinesClient.listPipelines(projectName, '1');
-
-            pipelineItems = builds.map(b => {
+            this.pipelineItems = builds.map(b => {
+                var commitData = commitsDictionary[JSON.parse(b.parameters)["system.pullRequest.sourceCommitId"]];
+                commitData.commitUrl = `https://dev.azure.com/${this.state.hostContext.name}/${this.state.projectContext.name}/_git/${b.repository.name}/commit/${commitData.commitId}?refName=${pullRequest.sourceRefName}`;
 
                 return {
                     favorite: new ObservableValue<boolean>(true),
                     lastRunData: {
                         branchName: pullRequest.sourceRefName.replace("refs/heads/", ""),
-                        endTime: b.finishTime,
                         prId: pullRequestId,
-                        prName: `#${b.buildNumber} - ${commitsDictionary[JSON.parse(b.parameters)["system.pullRequest.sourceCommitId"]].comment}`,
-                        releaseType: ReleaseType.tag,
+                        runName: `#${b.buildNumber} \u00b7 ${commitData.comment}`,
                         startTime: b.startTime,
+                        endTime: b.finishTime,
+                        duration: humanReadableTimeDiff(b.startTime, b.finishTime, 'en'),
+                        commitData: commitData,
+                        url: `https://dev.azure.com/${this.state.hostContext.name}/${this.state.projectContext.name}/_build/results?buildId=${b.id}&view=results`
                     },
                     name: b.definition.name,
-                    status: PipelineStatus.running
+                    status: b.status,
+                    result: b.result,
+                    logUrl: `https://dev.azure.com/${this.state.hostContext.name}/${this.state.projectContext.name}/_build/results?buildId=${b.id}&view=logs`,
+                    url: `https://dev.azure.com/${this.state.hostContext.name}/${this.state.projectContext.name}/_build?definitionId=${b.definition.id}&_a=summary`
                 };
             }) as IPipelineItem[];
 
-            this.itemProvider.notify(new ArrayItemProvider(pipelineItems), "newData")
+            this.itemProvider.value = new ArrayItemProvider(this.pipelineItems);
+            this.itemProvider.notify(this.itemProvider.value, "newData")
 
             SDK.notifyLoadSucceeded();
         } catch (error) {
@@ -142,12 +154,12 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             <Card
                 className="flex-grow bolt-table-card"
                 contentProps={{ contentPadding: false }}
-                titleProps={{ text: "All pipelines" }}
+                titleProps={{ text: "Pipelines runs" }}
             >
                 <Observer itemProvider={this.itemProvider}>
                     {(observableProps: { itemProvider: ArrayItemProvider<IPipelineItem> }) => (
                         <Table<IPipelineItem>
-                            ariaLabel="Advanced table"
+                            ariaLabel="Pipelines runs"
                             behaviors={[this.sortingBehavior]}
                             className="table-example"
                             columns={this.columns}
@@ -167,28 +179,38 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
         {
             id: "name",
             name: "Pipeline",
-            renderCell: renderNameColumn,
+            renderCell: this.renderNameColumn,
             readonly: true,
             sortProps: {
                 ariaLabelAscending: "Sorted A to Z",
                 ariaLabelDescending: "Sorted Z to A",
             },
-            width: -33,
+            width: -20,
         },
         {
             className: "pipelines-two-line-cell",
             id: "lastRun",
             name: "Last run",
-            renderCell: renderLastRunColumn,
+            renderCell: this.renderLastRunColumn,
+            
             width: -46,
+        },
+        {
+            id: "stages",
+            ariaLabel: "Stages",
+            name: "Stages",
+            readonly: true,
+            renderCell: this.renderStageColumn,
+            width: -10,
         },
         {
             id: "time",
             ariaLabel: "Time and duration",
             readonly: true,
-            renderCell: renderDateColumn,
+            renderCell: this.renderDateColumn,
             width: -20,
         },
+/**
         new ColumnMore(() => {
             return {
                 id: "sub-menu",
@@ -198,22 +220,24 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                 ],
             };
         }),
+*/
     ];
 
-    private itemProvider: ObservableValue<ArrayItemProvider<IPipelineItem>> = new ObservableValue<ArrayItemProvider<IPipelineItem>>(new ArrayItemProvider(pipelineItems));
+    private itemProvider: ObservableValue<ArrayItemProvider<IPipelineItem>> = new ObservableValue<ArrayItemProvider<IPipelineItem>>(new ArrayItemProvider(this.pipelineItems));
 
     private sortingBehavior = new ColumnSorting<IPipelineItem>(
         (columnIndex: number, proposedSortOrder: SortOrder) => {
-            pipelineItems = 
+            this.pipelineItems =
                 sortItems(
                     columnIndex,
                     proposedSortOrder,
                     this.sortFunctions,
                     this.columns,
-                    pipelineItems
+                    this.pipelineItems
                 );
         }
     );
+
 
     private sortFunctions = [
         // Sort on Name column
@@ -221,221 +245,166 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             return item1.name.localeCompare(item2.name!);
         },
     ];
-}
 
-function renderNameColumn(
-    rowIndex: number,
-    columnIndex: number,
-    tableColumn: ITableColumn<IPipelineItem>,
-    tableItem: IPipelineItem
-): JSX.Element {
-    return (
-        <SimpleTableCell
-            columnIndex={columnIndex}
-            tableColumn={tableColumn}
-            key={"col-" + columnIndex}
-            contentClassName="fontWeightSemiBold font-weight-semibold fontSizeM font-size-m"
-        >
-            <Status
-                {...getStatusIndicatorData(tableItem.status).statusProps}
-                className="icon-large-margin"
-                size={StatusSize.l}
+
+    private renderNameColumn(
+        rowIndex: number,
+        columnIndex: number,
+        tableColumn: ITableColumn<IPipelineItem>,
+        tableItem: IPipelineItem
+    ): JSX.Element {
+        const url = tableItem.url;
+        return (
+            <SimpleTableCell
+                columnIndex={columnIndex}
+                tableColumn={tableColumn}
+                key={"col-" + columnIndex}
+                contentClassName="fontWeightSemiBold font-weight-semibold fontSizeM font-size-m" 
+            >
+                <Status
+                    {...getStatusIndicatorData(tableItem.status, tableItem.result).statusProps}
+                    className="icon-large-margin"
+                    size={StatusSize.m}
+                />
+                <div className="flex-row wrap-text">
+                    <Tooltip overflowOnly={true}>
+                        <Link
+                            className="fontSizeM font-size-m bolt-table-link bolt-table-cell-content-with-inline-link"
+                            excludeTabStop
+                            onClick={(e) => parent.location.href = url}
+                        >
+                            {tableItem.name}
+                        </Link>
+                    </Tooltip>
+                </div>
+            </SimpleTableCell>
+        );
+    }
+
+
+    private renderStageColumn(
+        rowIndex: number,
+        columnIndex: number,
+        tableColumn: ITableColumn<IPipelineItem>,
+        tableItem: IPipelineItem
+    ): JSX.Element {
+        const logUrl = tableItem.logUrl;
+        return (
+            <SimpleTableCell
+                columnIndex={columnIndex}
+                tableColumn={tableColumn}
+                key={"col-" + columnIndex}
+                contentClassName="fontWeightSemiBold font-weight-semibold fontSizeL font-size-l"
+            >
+                        <Link
+                            className="fontSizeL font-size-l bolt-table-link bolt-table-inline-link"
+                            excludeTabStop
+                            onClick={(e) => parent.location.href = logUrl}
+                        >
+                <Status
+                    {...getStatusIndicatorData(tableItem.status, tableItem.result).statusProps}
+                    className="icon-large-margin"
+                    size={StatusSize.m}
+                />
+                        </Link>
+            </SimpleTableCell>
+        );
+    }
+
+
+    private renderLastRunColumn(
+        rowIndex: number,
+        columnIndex: number,
+        tableColumn: ITableColumn<IPipelineItem>,
+        tableItem: IPipelineItem
+    ): JSX.Element {
+        const { runName, branchName, url, commitData } = tableItem.lastRunData;
+        return (
+            <TwoLineTableCell
+                className="bolt-table-cell-content-with-inline-link no-v-padding"
+                key={"col-" + columnIndex}
+                columnIndex={columnIndex}
+                tableColumn={tableColumn}
+                line1={
+                    <span className="flex-row wrap-text">
+                        <Tooltip text={runName} overflowOnly>
+                            <Link
+                                className="fontSizeM font-size-m bolt-table-link bolt-table-inline-link"
+                                excludeTabStop
+                                onClick={ (e) => parent.location.href = url }
+                            >
+                                {runName}
+                            </Link>
+                        </Tooltip>
+                    </span>
+                }
+                line2={
+                   <>
+                     <span className="fontSizeM font-size-m secondary-text flex-row flex-center">
+                        <Tooltip text={commitData.committer.date} overflowOnly>
+                            <Link
+                                className="monospaced-text bolt-table-link bolt-table-inline-link"
+                                excludeTabStop
+                                onClick={(e) => parent.location.href = commitData.commitUrl}
+                            >
+                                {Icon({
+                                    className: "icon-margin",
+                                    iconName: "BranchCommit",
+                                    key: "branch-commit",
+                                })}
+                                {commitData.commitId.substring(0,8)}
+                            </Link>
+                        </Tooltip>
+                        <VssPersona
+                            identityDetailsProvider={initialsIdentityProvider(commitData)}
+                            size={"small"}
+                        />
+                        &nbsp;{commitData.committer.name}
+                    </span>
+                   </>
+                }
             />
-            <div className="flex-row wrap-text">
-                <Tooltip overflowOnly={true}>
-                    <span>{tableItem.name}</span>
-                </Tooltip>
-            </div>
-        </SimpleTableCell>
-    );
+        );
+    }
+
+    private renderDateColumn(
+        rowIndex: number,
+        columnIndex: number,
+        tableColumn: ITableColumn<IPipelineItem>,
+        tableItem: IPipelineItem
+    ): JSX.Element {
+        return (
+            <TwoLineTableCell
+                key={"col-" + columnIndex}
+                columnIndex={columnIndex}
+                tableColumn={tableColumn}
+                line1={WithIcon({
+                    className: "fontSize font-size",
+                    iconProps: { iconName: "Calendar" },
+                    children: (
+                        <Ago date={tableItem.lastRunData.startTime!} /*format={AgoFormat.Extended}*/ />
+                    ),
+                })}
+                line2={WithIcon({
+                    className: "fontSize font-size bolt-table-two-line-cell-item wrap-text",
+                    iconProps: { iconName: "Clock" },
+                    children: (
+                        <Duration
+                            startDate={tableItem.lastRunData.startTime!}
+                            endDate={tableItem.lastRunData.endTime}
+                        />
+                    ),
+                })}
+            />
+        );
+    }
 }
-
-function renderLastRunColumn(
-    rowIndex: number,
-    columnIndex: number,
-    tableColumn: ITableColumn<IPipelineItem>,
-    tableItem: IPipelineItem
-): JSX.Element {
-    const { prName, prId, releaseType, branchName } = tableItem.lastRunData;
-    const text = "#" + prId + " \u00b7 " + prName;
-    const releaseTypeText = ReleaseTypeText({ releaseType: releaseType });
-    return (
-        <TwoLineTableCell
-            className="bolt-table-cell-content-with-inline-link no-v-padding"
-            key={"col-" + columnIndex}
-            columnIndex={columnIndex}
-            tableColumn={tableColumn}
-            line1={
-                <span className="flex-row wrap-text">
-                    <Tooltip text={text} overflowOnly>
-                        <Link
-                            className="fontSizeM font-size-m bolt-table-link bolt-table-inline-link"
-                            excludeTabStop
-                            href="#pr"
-                        >
-                            {text}
-                        </Link>
-                    </Tooltip>
-                </span>
-            }
-            line2={
-                <span className="fontSize font-size secondary-text flex-row flex-center">
-                    {ReleaseTypeIcon({ releaseType: releaseType })}
-                    <Tooltip text={releaseTypeText} overflowOnly>
-                        <span key="release-type-text" style={{ flexShrink: 10 }}>
-                            {releaseTypeText}
-                        </span>
-                    </Tooltip>
-                    <Tooltip text={branchName} overflowOnly>
-                        <Link
-                            className="monospaced-text bolt-table-link bolt-table-inline-link"
-                            excludeTabStop
-                            href="#branch"
-                        >
-                            {Icon({
-                                className: "icon-margin",
-                                iconName: "OpenSource",
-                                key: "branch-name",
-                            })}
-                            {branchName}
-                        </Link>
-                    </Tooltip>
-                </span>
-            }
-        />
-    );
-}
-
-let pipelineItems: IPipelineItem[] = [
-    {
-        favorite: new ObservableValue<boolean>(true),
-        lastRunData: {
-            branchName: "main",
-            endTime: modifyNow(0, -1, 23, 8),
-            prId: 482,
-            prName: "Added testing for get_service_instance_stats",
-            releaseType: ReleaseType.prAutomated,
-            startTime: modifyNow(0, -1, 0, 0),
-        },
-        name: "enterprise-distributed-service",
-        status: PipelineStatus.running,
-    },
-    {
-        favorite: new ObservableValue<boolean>(true),
-        lastRunData: {
-            branchName: "main",
-            endTime: modifyNow(-1, 0, 5, 2),
-            prId: 137,
-            prName: "Update user service",
-            releaseType: ReleaseType.tag,
-            startTime: modifyNow(-1, 0, 0, 0),
-        },
-        name: "microservice-architecture",
-        status: PipelineStatus.succeeded,
-    },
-    {
-        favorite: new ObservableValue<boolean>(false),
-        lastRunData: {
-            branchName: "main",
-            endTime: modifyNow(0, -2, 33, 1),
-            prId: 32,
-            prName: "Update user service",
-            releaseType: ReleaseType.scheduled,
-            startTime: modifyNow(0, -2, 0, 0),
-        },
-        name: "mobile-ios-app",
-        status: PipelineStatus.succeeded,
-    },
-    {
-        favorite: new ObservableValue<boolean>(false),
-        lastRunData: {
-            branchName: "test",
-            endTime: modifyNow(0, -4, 4, 17),
-            prId: 385,
-            prName: "Add a request body validator",
-            releaseType: ReleaseType.prAutomated,
-            startTime: modifyNow(0, -4, 0, 0),
-        },
-        name: "node-package",
-        status: PipelineStatus.succeeded,
-    },
-    {
-        favorite: new ObservableValue<boolean>(false),
-        lastRunData: {
-            branchName: "dev",
-            endTime: modifyNow(0, -6, 2, 8),
-            prId: 792,
-            prName: "Clean up notifications styling",
-            releaseType: ReleaseType.manual,
-            startTime: modifyNow(0, -6, 0, 0),
-        },
-        name: "parallel-stages",
-        status: PipelineStatus.failed,
-    },
-    {
-        favorite: new ObservableValue<boolean>(false),
-        lastRunData: {
-            branchName: "padding-1",
-            endTime: modifyNow(-2, 0, 49, 52),
-            prId: 283,
-            prName: "Add extra padding on cells",
-            releaseType: ReleaseType.prAutomated,
-            startTime: modifyNow(-2, 0, 0, 0),
-        },
-        name: "simple-web-app",
-        status: PipelineStatus.warning,
-    },
-];
-
-
-function renderDateColumn(
-    rowIndex: number,
-    columnIndex: number,
-    tableColumn: ITableColumn<IPipelineItem>,
-    tableItem: IPipelineItem
-): JSX.Element {
-    return (
-        <TwoLineTableCell
-            key={"col-" + columnIndex}
-            columnIndex={columnIndex}
-            tableColumn={tableColumn}
-            line1={WithIcon({
-                className: "fontSize font-size",
-                iconProps: { iconName: "Calendar" },
-                children: (
-                    <Ago date={tableItem.lastRunData.startTime!} /*format={AgoFormat.Extended}*/ />
-                ),
-            })}
-            line2={WithIcon({
-                className: "fontSize font-size bolt-table-two-line-cell-item wrap-text",
-                iconProps: { iconName: "Clock" },
-                children: (
-                    <Duration
-                        startDate={tableItem.lastRunData.startTime!}
-                        endDate={tableItem.lastRunData.endTime}
-                    />
-                ),
-            })}
-        />
-    );
-}
-
-function modifyNow(days: number, hours: number, minutes: number, seconds: number): Date {
-    const now = new Date();
-    const newDate = new Date(now as any);
-    newDate.setDate(now.getDate() + days);
-    newDate.setHours(now.getHours() + hours);
-    newDate.setMinutes(now.getMinutes() + minutes);
-    newDate.setSeconds(now.getSeconds() + seconds);
-    return newDate;
-}
-
 
 function WithIcon(props: {
     className?: string;
     iconProps: IIconProps;
     children?: React.ReactNode;
-}) {
+}): JSX.Element {
     return (
         <div className={css(props.className, "flex-row flex-center")}>
             {Icon({ ...props.iconProps, className: "icon-margin" })}
@@ -444,21 +413,31 @@ function WithIcon(props: {
     );
 }
 
-function ReleaseTypeIcon(props: { releaseType: ReleaseType }) {
-    let iconName: string = "";
-    switch (props.releaseType) {
-        case ReleaseType.prAutomated:
-            iconName = "BranchPullRequest";
-            break;
-        default:
-            iconName = "Tag";
-    }
 
-    return Icon({
-        className: "bolt-table-inline-link-left-padding icon-margin",
-        iconName: iconName,
-        key: "release-type",
+function initialsIdentityProvider(commitData:any): IIdentityDetailsProvider {
+    return ({
+        getDisplayName() {
+            return commitData.committer.name;
+        },
+        getIdentityImageUrl(size: number) {
+            return undefined;
+        }
     });
 }
+
+
+function humanReadableTimeDiff(startDate: Date, endDate: Date, language: string) {
+    const timeIntervals = [31536000, 2628000, 604800, 86400, 3600, 60, 1];
+    const intervalNames = ['year', 'month', 'week', 'day', 'hour', 'minute', 'second'];
+    const formatter = new Intl.RelativeTimeFormat(language, { numeric: 'auto' });
+
+    const diff = Math.abs(endDate.getTime() - startDate.getTime()) / 1000;
+    const index = timeIntervals.findIndex(i => (diff / i) >= 1);
+    const n = Math.floor(diff / timeIntervals[index]);
+    const interval: any = intervalNames[index];
+
+    return formatter.format(n, interval);
+}
+
 
 showRootComponent(<PrTabsBuild />);

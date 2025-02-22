@@ -58,12 +58,9 @@ module.exports = {
         use: ["style-loader", "css-loader"]
       },
       {
-        test: /\.woff$/,
-        use: [
-          {
-            loader: "base64-inline-loader"
-          }
-        ]
+        test: /\.woff2?$/i,
+        type: 'asset/resource',
+        dependency: { not: ['url'] }
       },
       {
         test: /\.html$/,

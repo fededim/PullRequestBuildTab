@@ -13,6 +13,7 @@ import {
 } from "azure-devops-ui/Table";
 import { css } from "azure-devops-ui/Util";
 import { ArrayItemProvider } from "azure-devops-ui/Utilities/Provider";
+import { BuildResult, BuildStatus } from "azure-devops-extension-api/Build/Build";
 
 export interface ITableItem extends ISimpleTableCell {
     name: ISimpleListCell;
@@ -205,27 +206,26 @@ export enum PipelineStatus {
     warning = "warning",
 }
 
-export enum ReleaseType {
-    prAutomated,
-    tag,
-    scheduled,
-    manual,
-}
-
 interface IPipelineLastRun {
     startTime?: Date;
     endTime?: Date;
+    duration?: string;
+    lastRunId: number;
     prId: number;
-    prName: string;
-    releaseType: ReleaseType;
+    runName: string;
     branchName: string;
+    commitData: any;
+    url: string;
 }
 
 export interface IPipelineItem {
     name: string;
-    status: PipelineStatus;
+    status: BuildStatus;
+    result: BuildResult;
     lastRunData: IPipelineLastRun;
     favorite: ObservableValue<boolean>;
+    logUrl: string;
+    url: string;
 }
 
 interface IStatusIndicatorData {
@@ -233,41 +233,48 @@ interface IStatusIndicatorData {
     label: string;
 }
 
-export function getStatusIndicatorData(status: string): IStatusIndicatorData {
-    status = status || "";
-    status = status.toLowerCase();
+export function getStatusIndicatorData(status: BuildStatus, result: BuildResult): IStatusIndicatorData {
     const indicatorData: IStatusIndicatorData = {
         label: "Success",
         statusProps: { ...Statuses.Success, ariaLabel: "Success" },
     };
+
     switch (status) {
-        case PipelineStatus.failed:
-            indicatorData.statusProps = { ...Statuses.Failed, ariaLabel: "Failed" };
-            indicatorData.label = "Failed";
+        case BuildStatus.None:
+        case BuildStatus.Postponed:
+        case BuildStatus.NotStarted:
+            indicatorData.statusProps = { ...Statuses.Queued, ariaLabel: "Queued" };
+            indicatorData.label = "Queued";
             break;
-        case PipelineStatus.running:
+
+        case BuildStatus.InProgress:
+        case BuildStatus.Cancelling:
             indicatorData.statusProps = { ...Statuses.Running, ariaLabel: "Running" };
             indicatorData.label = "Running";
             break;
-        case PipelineStatus.warning:
-            indicatorData.statusProps = { ...Statuses.Warning, ariaLabel: "Warning" };
-            indicatorData.label = "Warning";
 
+        case BuildStatus.Completed:
+            switch (result) {
+                case BuildResult.Canceled:
+                    indicatorData.statusProps = { ...Statuses.Canceled, ariaLabel: "Canceled" };
+                    indicatorData.label = "Canceled";
+                    break;
+
+                case BuildResult.Failed:
+                    indicatorData.statusProps = { ...Statuses.Failed, ariaLabel: "Failed" };
+                    indicatorData.label = "Failed";
+                    break;
+
+                case BuildResult.PartiallySucceeded:
+                    indicatorData.statusProps = { ...Statuses.Warning, ariaLabel: "Warning" };
+                    indicatorData.label = "Warning";
+                    break;
+
+                case BuildResult.Succeeded:
+                    break;
+            }
             break;
     }
 
     return indicatorData;
-}
-
-export function ReleaseTypeText(props: { releaseType: ReleaseType }) {
-    switch (props.releaseType) {
-        case ReleaseType.prAutomated:
-            return "PR Automated";
-        case ReleaseType.manual:
-            return "Manually triggered";
-        case ReleaseType.scheduled:
-            return "Scheduled";
-        default:
-            return "Release new-features";
-    }
 }
