@@ -270,7 +270,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                     <Tooltip overflowOnly={true}>
                         <Link
                             className="fontSizeM font-size-m bolt-table-link bolt-table-cell-content-with-inline-link"
-                            excludeTabStop
+                            removeUnderline = {true}
                             onClick={(e) => parent.location.href = url}
                         >
                             {tableItem.name}
@@ -298,7 +298,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             >
                         <Link
                             className="fontSizeL font-size-l bolt-table-link bolt-table-inline-link"
-                            excludeTabStop
+                            removeUnderline = {true}
                             onClick={(e) => parent.location.href = logUrl}
                         >
                 <Status
@@ -330,7 +330,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                         <Tooltip text={runName} overflowOnly>
                             <Link
                                 className="fontSizeM font-size-m bolt-table-link bolt-table-inline-link"
-                                excludeTabStop
+                                removeUnderline = {true}
                                 onClick={ (e) => parent.location.href = url }
                             >
                                 {runName}
@@ -347,12 +347,14 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                                 excludeTabStop
                                 onClick={(e) => parent.location.href = commitData.commitUrl}
                             >
-                                {Icon({
-                                    className: "icon-margin",
-                                    iconName: "BranchCommit",
-                                    key: "branch-commit",
-                                })}
-                                {commitData.commitId.substring(0,8)}
+                            {WithIcon({
+                                className: "fontSize font-size bolt-table-two-line-cell-item wrap-text",
+                                iconProps: { iconName: "BranchCommit" },
+                                children: (
+                                    commitData.commitId.substring(0,8)
+                                ),
+                            })}
+                               
                             </Link>
                         </Tooltip>
                         <VssPersona
