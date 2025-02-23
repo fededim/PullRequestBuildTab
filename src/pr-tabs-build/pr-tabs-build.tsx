@@ -77,6 +77,73 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
     }
 
 
+
+    private async refreshBuildsData() {
+
+        if (!this.state.hostNavigationService)
+            return;
+
+        const gitClient = getClient(GitRestClient);
+        const buildClient = getClient(BuildRestClient);
+
+        let navRoute = await this.state.hostNavigationService.getPageRoute();
+
+        let pullRequestId = Number(navRoute.routeValues.parameters);
+        let projectName = navRoute.routeValues.project;
+        let gitRepositoryName = navRoute.routeValues.GitRepositoryName;
+
+        let pullRequest = await gitClient.getPullRequestById(pullRequestId, projectName);
+        let pullRequestBranch = `refs/pull/${pullRequestId}/merge`;
+        let builds = await buildClient.getBuilds(projectName, undefined, undefined, undefined, undefined, undefined, undefined, BuildReason.PullRequest, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, BuildQueryOrder.StartTimeDescending, pullRequestBranch, undefined, pullRequest.repository.id, 'TfsGit');
+
+        let commitIds = builds.map(b => JSON.parse(b.parameters)["system.pullRequest.sourceCommitId"]) as string[];
+        let commitsSearchCriteria: any = { ids: commitIds };
+
+        var commitsDictionary: { [details: string]: any; } = {};
+        var commits = await gitClient.getCommits(pullRequest.repository.id, commitsSearchCriteria);
+        commits.forEach((c, index) => commitsDictionary[c.commitId] = c);
+
+        if (builds?.length > 0) {
+            this.pipelineItems = builds.map(b => {
+                var commitData = commitsDictionary[JSON.parse(b.parameters)["system.pullRequest.sourceCommitId"]];
+                commitData.commitUrl = `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_git/${b.repository.name}/commit/${commitData.commitId}?refName=${pullRequest.sourceRefName}`;
+
+                return {
+                    favorite: new ObservableValue<boolean>(true),
+                    lastRunData: {
+                        branchName: pullRequest.sourceRefName.replace("refs/heads/", ""),
+                        prId: pullRequestId,
+                        runName: `#${b.buildNumber} \u00b7 ${commitData.comment}`,
+                        startTime: b.startTime,
+                        endTime: b.finishTime,
+                        duration: humanReadableTimeDiff(b.startTime, b.finishTime, 'en'),
+                        commitData: commitData,
+                        url: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build/results?buildId=${b.id}&view=results`
+                    },
+                    id: b.id,
+                    name: b.definition.name,
+                    status: b.status,
+                    result: b.result,
+                    logUrl: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build/results?buildId=${b.id}&view=logs`,
+                    url: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build?definitionId=${b.definition.id}&_a=summary`
+                };
+            }) as IPipelineItem[];
+        }
+
+        else
+            this.pipelineItems = [];
+
+        this.itemProvider.value = new ArrayItemProvider(this.pipelineItems);
+        //this.itemProvider.notify(this.itemProvider.value, "newData");
+
+        // TODO: autorefresh through timer or service hooks
+        // TODO: check if notify is mandatory for ObservableValue
+        // TODO: fix ui styles
+        debugger;
+    }
+
+
+
     private async loadProjectContext(): Promise<void> {
         try {
             const hostNavigationService = await SDK.getService<IHostNavigationService>(CommonServiceIds.HostNavigationService);
@@ -88,65 +155,16 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
 
             this.setState({ projectContext: projectContext, extensionContext: extensionContext, hostContext: hostContext, hostNavigationService: hostNavigationService, accessToken: accessToken });
 
-            const gitClient = getClient(GitRestClient);
-            const buildClient = getClient(BuildRestClient);
-
-            let navRoute = await hostNavigationService.getPageRoute();
-
-            let pullRequestId = Number(navRoute.routeValues.parameters);
-            let projectName = navRoute.routeValues.project;
-            let gitRepositoryName = navRoute.routeValues.GitRepositoryName;
-
-            let pullRequest = await gitClient.getPullRequestById(pullRequestId, projectName);
-            let pullRequestBranch = `refs/pull/${pullRequestId}/merge`;
-            let builds = await buildClient.getBuilds(projectName, undefined, undefined, undefined, undefined, undefined, undefined, BuildReason.PullRequest, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, BuildQueryOrder.StartTimeDescending, pullRequestBranch, undefined, pullRequest.repository.id, 'TfsGit');
-
-            let commitIds = builds.map(b => JSON.parse(b.parameters)["system.pullRequest.sourceCommitId"]) as string[];
-            let commitsSearchCriteria: any = { ids: commitIds };
-
-            var commitsDictionary: { [details: string]: any } = {}
-            var commits = await gitClient.getCommits(pullRequest.repository.id, commitsSearchCriteria);
-            commits.forEach((c, index) => commitsDictionary[c.commitId] = c);
-
-            debugger;
-
-            if (builds?.length>0) {
-                this.pipelineItems = builds.map(b => {
-                    var commitData = commitsDictionary[JSON.parse(b.parameters)["system.pullRequest.sourceCommitId"]];
-                    commitData.commitUrl = `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_git/${b.repository.name}/commit/${commitData.commitId}?refName=${pullRequest.sourceRefName}`;
-
-                    return {
-                        favorite: new ObservableValue<boolean>(true),
-                        lastRunData: {
-                            branchName: pullRequest.sourceRefName.replace("refs/heads/", ""),
-                            prId: pullRequestId,
-                            runName: `#${b.buildNumber} \u00b7 ${commitData.comment}`,
-                            startTime: b.startTime,
-                            endTime: b.finishTime,
-                            duration: humanReadableTimeDiff(b.startTime, b.finishTime, 'en'),
-                            commitData: commitData,
-                            url: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build/results?buildId=${b.id}&view=results`
-                        },
-                        id: b.id,
-                        name: b.definition.name,
-                        status: b.status,
-                        result: b.result,
-                        logUrl: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build/results?buildId=${b.id}&view=logs`,
-                        url: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build?definitionId=${b.definition.id}&_a=summary`
-                    };
-                }) as IPipelineItem[];
-            }
-            else
-                this.pipelineItems = [];
-
-            this.itemProvider.value = new ArrayItemProvider(this.pipelineItems);
-            this.itemProvider.notify(this.itemProvider.value, "newData")
+            await this.refreshBuildsData();
 
             SDK.notifyLoadSucceeded();
         } catch (error) {
             console.error("Failed to load project context: ", error);
         }
     }
+
+
+
 
 
 
