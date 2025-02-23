@@ -1,3 +1,0 @@
-# PullRequestsBuildsTab extension
-
-Test

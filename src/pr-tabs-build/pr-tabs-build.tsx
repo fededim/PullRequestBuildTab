@@ -3,8 +3,7 @@ import { showRootComponent } from "../Common";
 import * as React from "react";
 import {
     getStatusIndicatorData,
-    IPipelineItem,
-    PipelineStatus
+    IPipelineItem
 } from "./pr-tabs-build-data";
 
 import * as SDK from "azure-devops-extension-sdk";
@@ -35,19 +34,19 @@ import { ObservableValue } from "azure-devops-ui/Core/Observable";
 import { Observer } from "azure-devops-ui/Observer";
 import { CoreRestClient } from "azure-devops-extension-api/Core";
 
-import { CommonServiceIds, IProjectPageService, IHostNavigationService } from "azure-devops-extension-api";
+import { CommonServiceIds, IProjectPageService, IHostNavigationService, IProjectInfo } from "azure-devops-extension-api";
 import { BuildRestClient } from "azure-devops-extension-api/Build/BuildClient";
 import { GitRestClient } from "azure-devops-extension-api/Git/GitClient";
 import { PipelinesRestClient } from "azure-devops-extension-api/Pipelines/PipelinesClient";
 import { getClient } from 'azure-devops-extension-api'
-import { BuildReason } from "azure-devops-extension-api/Build/Build";
+import { BuildReason, BuildQueryOrder } from "azure-devops-extension-api/Build/Build";
 
 
 interface IPullRequestTabGroupState {
-    projectContext: any;
-    extensionContext: any;
-    hostContext: any;
-    hostNavigationService: any;
+    projectContext?: IProjectInfo;
+    extensionContext?: SDK.IExtensionContext;
+    hostContext?: SDK.IHostContext;
+    hostNavigationService?: IHostNavigationService;
     accessToken: string;
 }
 
@@ -78,11 +77,6 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
     }
 
 
-    private navigateTo = (url: string) => {
-        this.state.hostNavigationService.navigate(url);
-    }
-
-
     private async loadProjectContext(): Promise<void> {
         try {
             const hostNavigationService = await SDK.getService<IHostNavigationService>(CommonServiceIds.HostNavigationService);
@@ -105,7 +99,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
 
             let pullRequest = await gitClient.getPullRequestById(pullRequestId, projectName);
             let pullRequestBranch = `refs/pull/${pullRequestId}/merge`;
-            let builds = await buildClient.getBuilds(projectName, undefined, undefined, undefined, undefined, undefined, undefined, BuildReason.PullRequest, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, pullRequestBranch, undefined, pullRequest.repository.id, 'TfsGit');
+            let builds = await buildClient.getBuilds(projectName, undefined, undefined, undefined, undefined, undefined, undefined, BuildReason.PullRequest, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, BuildQueryOrder.StartTimeDescending, pullRequestBranch, undefined, pullRequest.repository.id, 'TfsGit');
 
             let commitIds = builds.map(b => JSON.parse(b.parameters)["system.pullRequest.sourceCommitId"]) as string[];
             let commitsSearchCriteria: any = { ids: commitIds };
@@ -114,29 +108,36 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             var commits = await gitClient.getCommits(pullRequest.repository.id, commitsSearchCriteria);
             commits.forEach((c, index) => commitsDictionary[c.commitId] = c);
 
-            this.pipelineItems = builds.map(b => {
-                var commitData = commitsDictionary[JSON.parse(b.parameters)["system.pullRequest.sourceCommitId"]];
-                commitData.commitUrl = `https://dev.azure.com/${this.state.hostContext.name}/${this.state.projectContext.name}/_git/${b.repository.name}/commit/${commitData.commitId}?refName=${pullRequest.sourceRefName}`;
+            debugger;
 
-                return {
-                    favorite: new ObservableValue<boolean>(true),
-                    lastRunData: {
-                        branchName: pullRequest.sourceRefName.replace("refs/heads/", ""),
-                        prId: pullRequestId,
-                        runName: `#${b.buildNumber} \u00b7 ${commitData.comment}`,
-                        startTime: b.startTime,
-                        endTime: b.finishTime,
-                        duration: humanReadableTimeDiff(b.startTime, b.finishTime, 'en'),
-                        commitData: commitData,
-                        url: `https://dev.azure.com/${this.state.hostContext.name}/${this.state.projectContext.name}/_build/results?buildId=${b.id}&view=results`
-                    },
-                    name: b.definition.name,
-                    status: b.status,
-                    result: b.result,
-                    logUrl: `https://dev.azure.com/${this.state.hostContext.name}/${this.state.projectContext.name}/_build/results?buildId=${b.id}&view=logs`,
-                    url: `https://dev.azure.com/${this.state.hostContext.name}/${this.state.projectContext.name}/_build?definitionId=${b.definition.id}&_a=summary`
-                };
-            }) as IPipelineItem[];
+            if (builds?.length>0) {
+                this.pipelineItems = builds.map(b => {
+                    var commitData = commitsDictionary[JSON.parse(b.parameters)["system.pullRequest.sourceCommitId"]];
+                    commitData.commitUrl = `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_git/${b.repository.name}/commit/${commitData.commitId}?refName=${pullRequest.sourceRefName}`;
+
+                    return {
+                        favorite: new ObservableValue<boolean>(true),
+                        lastRunData: {
+                            branchName: pullRequest.sourceRefName.replace("refs/heads/", ""),
+                            prId: pullRequestId,
+                            runName: `#${b.buildNumber} \u00b7 ${commitData.comment}`,
+                            startTime: b.startTime,
+                            endTime: b.finishTime,
+                            duration: humanReadableTimeDiff(b.startTime, b.finishTime, 'en'),
+                            commitData: commitData,
+                            url: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build/results?buildId=${b.id}&view=results`
+                        },
+                        id: b.id,
+                        name: b.definition.name,
+                        status: b.status,
+                        result: b.result,
+                        logUrl: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build/results?buildId=${b.id}&view=logs`,
+                        url: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build?definitionId=${b.definition.id}&_a=summary`
+                    };
+                }) as IPipelineItem[];
+            }
+            else
+                this.pipelineItems = [];
 
             this.itemProvider.value = new ArrayItemProvider(this.pipelineItems);
             this.itemProvider.notify(this.itemProvider.value, "newData")
@@ -179,7 +180,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
         {
             id: "name",
             name: "Pipeline",
-            renderCell: this.renderNameColumn,
+            renderCell: this.renderPipelineColumn,
             readonly: true,
             sortProps: {
                 ariaLabelAscending: "Sorted A to Z",
@@ -206,8 +207,9 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
         {
             id: "time",
             ariaLabel: "Time and duration",
+            name: "Time and duration",
             readonly: true,
-            renderCell: this.renderDateColumn,
+            renderCell: this.renderTimeInformationColumn,
             width: -20,
         },
 /**
@@ -247,7 +249,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
     ];
 
 
-    private renderNameColumn(
+    private renderPipelineColumn(
         rowIndex: number,
         columnIndex: number,
         tableColumn: ITableColumn<IPipelineItem>,
@@ -273,7 +275,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                             removeUnderline = {true}
                             onClick={(e) => parent.location.href = url}
                         >
-                            {tableItem.name}
+                            {`${tableItem.name} (#${tableItem.id})`}
                         </Link>
                     </Tooltip>
                 </div>
@@ -369,7 +371,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
         );
     }
 
-    private renderDateColumn(
+    private renderTimeInformationColumn(
         rowIndex: number,
         columnIndex: number,
         tableColumn: ITableColumn<IPipelineItem>,
