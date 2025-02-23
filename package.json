@@ -22,7 +22,7 @@
     "compile:dev": "npm run clean && webpack --mode development",
     "build": "npm run compile",
     "build:dev": "npm run compile:dev",
-    "postbuild": "npm run package-extension -- --rev-version",
+    "postbuild": "npm run package -- --rev-version",
     "package": "tfx extension create --manifest-globs vss-extension.json",
     "publish": "tfx extension publish --manifest-globs vss-extension.json",
     "publish:dev": "tfx extension publish --manifest-globs vss-extension.json",
