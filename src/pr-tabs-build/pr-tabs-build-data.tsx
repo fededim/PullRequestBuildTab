@@ -19,7 +19,7 @@ import { BuildResult, BuildStatus } from "azure-devops-extension-api/Build/Build
 interface IPipelineLastRun {
     startTime?: Date;
     endTime?: Date;
-    duration?: string;
+    duration: () => string;
     lastRunId: number;
     prId: number;
     runName: string;

@@ -1,4 +1,5 @@
 import { showRootComponent } from "../Common";
+import { HttpTransportType, HubConnection, HubConnectionBuilder, LogLevel, MessageHeaders } from '@microsoft/signalr';
 
 import * as React from "react";
 import {
@@ -37,6 +38,7 @@ import { CoreRestClient } from "azure-devops-extension-api/Core";
 import { CommonServiceIds, IProjectPageService, IHostNavigationService, IProjectInfo } from "azure-devops-extension-api";
 import { BuildRestClient } from "azure-devops-extension-api/Build/BuildClient";
 import { GitRestClient } from "azure-devops-extension-api/Git/GitClient";
+import { NotificationRestClient } from "azure-devops-extension-api/Notification/NotificationClient";
 import { PipelinesRestClient } from "azure-devops-extension-api/Pipelines/PipelinesClient";
 import { getClient } from 'azure-devops-extension-api'
 import { BuildReason, BuildQueryOrder } from "azure-devops-extension-api/Build/Build";
@@ -47,16 +49,26 @@ interface IPullRequestTabGroupState {
     extensionContext?: SDK.IExtensionContext;
     hostContext?: SDK.IHostContext;
     hostNavigationService?: IHostNavigationService;
+    pullRequestUpdateService: any;
     accessToken: string;
+    appToken: string;
+    pullRequestId: number;
+    projectName: string;
+    gitRepositoryName: string;
 }
+
+const PullRequestUpdateServiceId: string = "ms.vss-code-web.pr-updates-service";
+const AUTOREFRESHTIME: number = 15000;
 
 export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGroupState> {
 
     private pipelineItems: IPipelineItem[] = [];
 
+    private refreshTimer?: NodeJS.Timeout;
+
     constructor(props: {}) {
         super(props);
-        this.state = { projectContext: undefined, extensionContext: undefined, hostContext: undefined, hostNavigationService: undefined, accessToken: '' };
+        this.state = { projectContext: undefined, extensionContext: undefined, hostContext: undefined, hostNavigationService: undefined, pullRequestUpdateService: undefined, accessToken: '', appToken: '', pullRequestId: 0, gitRepositoryName: '', projectName: '' };
     }
 
 
@@ -67,34 +79,64 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
 
             SDK.ready().then(() => {
                 console.log("SDK is ready, loading project context...");
+
                 this.loadProjectContext();
             }).catch((error) => {
-                console.error("SDK ready failed: ", error);
+                console.error("Loading project context failed: ", error);
             });
-        } catch (error) {
+        }
+        catch (error) {
             console.error("Error during SDK initialization or project context loading: ", error);
         }
     }
 
 
 
+
+    public componentWillUnmount() {
+        this.disableAutorefresh();
+    }
+
+
+    private async subscribeEvents() {
+        setTimeout(() => {
+            this.state.pullRequestUpdateService?.signalRHub?.hub.on("OnBranchUpdated", (message: any) => {
+                if (message.isSourceUpdate && message.pullRequestId == this.state.pullRequestId) {
+                    console.debug("a new commit has been pushed to source branch");
+                    this.enableAutorefresh();
+                }
+            });
+            console.debug("subscribed to OnBranchUpdated event");
+        }, 1000);
+    }
+
+
+    private disableAutorefresh() {
+        if (this.refreshTimer) {
+            clearInterval(this.refreshTimer);
+            this.refreshTimer = undefined;
+            console.debug("disabled autorefresh");
+        }
+    }
+
+
+    private enableAutorefresh() {
+        if (!this.refreshTimer) {
+            this.refreshTimer = setInterval(async () => {
+                await this.refreshBuildsData();
+            }, AUTOREFRESHTIME);
+            console.debug("enabled autorefresh");
+        }
+    }
+
+
     private async refreshBuildsData() {
-
-        if (!this.state.hostNavigationService)
-            return;
-
         const gitClient = getClient(GitRestClient);
         const buildClient = getClient(BuildRestClient);
 
-        let navRoute = await this.state.hostNavigationService.getPageRoute();
-
-        let pullRequestId = Number(navRoute.routeValues.parameters);
-        let projectName = navRoute.routeValues.project;
-        let gitRepositoryName = navRoute.routeValues.GitRepositoryName;
-
-        let pullRequest = await gitClient.getPullRequestById(pullRequestId, projectName);
-        let pullRequestBranch = `refs/pull/${pullRequestId}/merge`;
-        let builds = await buildClient.getBuilds(projectName, undefined, undefined, undefined, undefined, undefined, undefined, BuildReason.PullRequest, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, BuildQueryOrder.StartTimeDescending, pullRequestBranch, undefined, pullRequest.repository.id, 'TfsGit');
+        let pullRequest = await gitClient.getPullRequestById(this.state.pullRequestId, this.state.projectName);
+        let pullRequestBranch = `refs/pull/${this.state.pullRequestId}/merge`;
+        let builds = await buildClient.getBuilds(this.state.projectName, undefined, undefined, undefined, undefined, undefined, undefined, BuildReason.PullRequest, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, BuildQueryOrder.StartTimeDescending, pullRequestBranch, undefined, pullRequest.repository.id, 'TfsGit');
 
         let commitIds = builds.map(b => JSON.parse(b.parameters)["system.pullRequest.sourceCommitId"]) as string[];
         let commitsSearchCriteria: any = { ids: commitIds };
@@ -102,6 +144,8 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
         var commitsDictionary: { [details: string]: any; } = {};
         var commits = await gitClient.getCommits(pullRequest.repository.id, commitsSearchCriteria);
         commits.forEach((c, index) => commitsDictionary[c.commitId] = c);
+
+        console.debug("refreshBuildsData called, number of builds returned " + builds?.length);
 
         if (builds?.length > 0) {
             this.pipelineItems = builds.map(b => {
@@ -112,11 +156,11 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                     favorite: new ObservableValue<boolean>(true),
                     lastRunData: {
                         branchName: pullRequest.sourceRefName.replace("refs/heads/", ""),
-                        prId: pullRequestId,
+                        prId: this.state.pullRequestId,
                         runName: `#${b.buildNumber} \u00b7 ${commitData.comment}`,
                         startTime: b.startTime,
                         endTime: b.finishTime,
-                        duration: humanReadableTimeDiff(b.startTime, b.finishTime, 'en'),
+                        duration: () => humanReadableTimeDiff(b.startTime, b.finishTime, 'en'),
                         commitData: commitData,
                         url: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build/results?buildId=${b.id}&view=results`
                     },
@@ -129,17 +173,22 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                 };
             }) as IPipelineItem[];
         }
-
         else
             this.pipelineItems = [];
 
         this.itemProvider.value = new ArrayItemProvider(this.pipelineItems);
+
+        // enable autorefresh if there is at least a running build otherwise disable it
+        if (this.pipelineItems.some(pi => !pi.lastRunData.endTime)) {
+            this.enableAutorefresh();
+        }
+        else {
+            this.disableAutorefresh();
+        }
+
         //this.itemProvider.notify(this.itemProvider.value, "newData");
 
-        // TODO: autorefresh through timer or service hooks
-        // TODO: check if notify is mandatory for ObservableValue
         // TODO: fix ui styles
-        debugger;
     }
 
 
@@ -151,13 +200,22 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             const projectContext = await projectClient.getProject();
             const extensionContext = await SDK.getExtensionContext();
             const hostContext = SDK.getHost();
+            const pullRequestUpdateService = await SDK.getService(PullRequestUpdateServiceId);
             const accessToken = await SDK.getAccessToken()
+            const appToken = await SDK.getAppToken()
 
-            this.setState({ projectContext: projectContext, extensionContext: extensionContext, hostContext: hostContext, hostNavigationService: hostNavigationService, accessToken: accessToken });
+            const navRoute = await hostNavigationService.getPageRoute();
+            const pullRequestId = Number(navRoute.routeValues.parameters);
+            const projectName = navRoute.routeValues.project;
+            const gitRepositoryName = navRoute.routeValues.GitRepositoryName;
 
-            await this.refreshBuildsData();
+            this.setState({ projectContext: projectContext, extensionContext: extensionContext, hostContext: hostContext, hostNavigationService: hostNavigationService, pullRequestUpdateService: pullRequestUpdateService, accessToken: accessToken, appToken: appToken, pullRequestId: pullRequestId, projectName: projectName, gitRepositoryName: gitRepositoryName });
+
+            await this.subscribeEvents();
 
             SDK.notifyLoadSucceeded();
+
+            await this.refreshBuildsData();
         } catch (error) {
             console.error("Failed to load project context: ", error);
         }
@@ -211,7 +269,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             id: "lastRun",
             name: "Last run",
             renderCell: this.renderLastRunColumn,
-            
+
             width: -46,
         },
         {
@@ -230,17 +288,17 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             renderCell: this.renderTimeInformationColumn,
             width: -20,
         },
-/**
-        new ColumnMore(() => {
-            return {
-                id: "sub-menu",
-                items: [
-                    { id: "submenu-one", text: "SubMenuItem 1" },
-                    { id: "submenu-two", text: "SubMenuItem 2" },
-                ],
-            };
-        }),
-*/
+        /**
+                new ColumnMore(() => {
+                    return {
+                        id: "sub-menu",
+                        items: [
+                            { id: "submenu-one", text: "SubMenuItem 1" },
+                            { id: "submenu-two", text: "SubMenuItem 2" },
+                        ],
+                    };
+                }),
+        */
     ];
 
     private itemProvider: ObservableValue<ArrayItemProvider<IPipelineItem>> = new ObservableValue<ArrayItemProvider<IPipelineItem>>(new ArrayItemProvider(this.pipelineItems));
@@ -274,28 +332,30 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
         tableItem: IPipelineItem
     ): JSX.Element {
         const url = tableItem.url;
+        let status = getStatusIndicatorData(tableItem.status, tableItem.result);
         return (
             <SimpleTableCell
                 columnIndex={columnIndex}
                 tableColumn={tableColumn}
                 key={"col-" + columnIndex}
-                contentClassName="fontWeightSemiBold font-weight-semibold fontSizeM font-size-m" 
+                contentClassName="fontWeightSemiBold font-weight-semibold fontSizeM font-size-m"
             >
-                <Status
-                    {...getStatusIndicatorData(tableItem.status, tableItem.result).statusProps}
-                    className="icon-large-margin"
-                    size={StatusSize.m}
-                />
-                <div className="flex-row wrap-text">
-                    <Tooltip overflowOnly={true}>
-                        <Link
-                            className="fontSizeM font-size-m bolt-table-link bolt-table-cell-content-with-inline-link"
-                            removeUnderline = {true}
-                            onClick={(e) => parent.location.href = url}
-                        >
-                            {`${tableItem.name} (#${tableItem.id})`}
-                        </Link>
-                    </Tooltip>
+                <div className="flex-row wrap-text" >
+                    <Link
+                        className="fontSizeM font-size-m bolt-table-link bolt-table-cell-content-with-inline-link"
+                        tooltipProps={{ text: status.label }}
+                        removeUnderline={true}
+                        onClick={(e) => parent.location.href = url}
+                    >
+                        <div>
+                            <Status
+                                {...status.statusProps}
+                                className="icon-large-margin valign-middle"
+                                size={StatusSize.m}
+                            />
+                            <span>{`${tableItem.name} (#${tableItem.id})`}</span>
+                        </div>
+                    </Link>
                 </div>
             </SimpleTableCell>
         );
@@ -309,6 +369,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
         tableItem: IPipelineItem
     ): JSX.Element {
         const logUrl = tableItem.logUrl;
+        let status = getStatusIndicatorData(tableItem.status, tableItem.result);
         return (
             <SimpleTableCell
                 columnIndex={columnIndex}
@@ -316,17 +377,18 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                 key={"col-" + columnIndex}
                 contentClassName="fontWeightSemiBold font-weight-semibold fontSizeL font-size-l"
             >
-                        <Link
-                            className="fontSizeL font-size-l bolt-table-link bolt-table-inline-link"
-                            removeUnderline = {true}
-                            onClick={(e) => parent.location.href = logUrl}
-                        >
-                <Status
-                    {...getStatusIndicatorData(tableItem.status, tableItem.result).statusProps}
-                    className="icon-large-margin"
-                    size={StatusSize.m}
-                />
-                        </Link>
+                <Link
+                    className="fontSizeL font-size-l bolt-table-link bolt-table-inline-link"
+                    tooltipProps={{ text: status.label }}
+                    removeUnderline={true}
+                    onClick={(e) => parent.location.href = logUrl}
+                >
+                    <Status
+                        {...status.statusProps}
+                        className="icon-large-margin"
+                        size={StatusSize.m}
+                    />
+                </Link>
             </SimpleTableCell>
         );
     }
@@ -347,43 +409,42 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                 tableColumn={tableColumn}
                 line1={
                     <span className="flex-row wrap-text">
-                        <Tooltip text={runName} overflowOnly>
-                            <Link
-                                className="fontSizeM font-size-m bolt-table-link bolt-table-inline-link"
-                                removeUnderline = {true}
-                                onClick={ (e) => parent.location.href = url }
-                            >
-                                {runName}
-                            </Link>
-                        </Tooltip>
+                        <Link
+                            className="fontSizeM font-size-m bolt-table-link bolt-table-inline-link"
+                            tooltipProps={{ text: runName }}
+                            removeUnderline={true}
+                            onClick={(e) => parent.location.href = url}
+                        >
+                            {runName}
+                        </Link>
                     </span>
                 }
                 line2={
-                   <>
-                     <span className="fontSizeM font-size-m secondary-text flex-row flex-center">
-                        <Tooltip text={commitData.committer.date} overflowOnly>
+                    <>
+                        <span className="fontSizeM font-size-m secondary-text flex-row flex-center">
                             <Link
                                 className="monospaced-text bolt-table-link bolt-table-inline-link"
+                                tooltipProps={{ text: commitData.committer.date.toString() }}
                                 excludeTabStop
                                 onClick={(e) => parent.location.href = commitData.commitUrl}
                             >
-                            {WithIcon({
-                                className: "fontSize font-size bolt-table-two-line-cell-item wrap-text",
-                                iconProps: { iconName: "BranchCommit" },
-                                children: (
-                                    commitData.commitId.substring(0,8)
-                                ),
-                            })}
-                               
+                                {WithIcon({
+                                    className: "fontSize font-size bolt-table-two-line-cell-item wrap-text",
+                                    iconProps: { iconName: "BranchCommit" },
+                                    children: (
+                                        commitData.commitId.substring(0, 8)
+                                    ),
+                                    condition: undefined,
+                                })}
+
                             </Link>
-                        </Tooltip>
-                        <VssPersona
-                            identityDetailsProvider={initialsIdentityProvider(commitData)}
-                            size={"small"}
-                        />
-                        &nbsp;{commitData.committer.name}
-                    </span>
-                   </>
+                            <VssPersona
+                                identityDetailsProvider={initialsIdentityProvider(commitData)}
+                                size={"small"}
+                            />
+                            &nbsp;{commitData.committer.name}
+                        </span>
+                    </>
                 }
             />
         );
@@ -406,6 +467,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                     children: (
                         <Ago date={tableItem.lastRunData.startTime!} /*format={AgoFormat.Extended}*/ />
                     ),
+                    condition: !(!tableItem.lastRunData.startTime),
                 })}
                 line2={WithIcon({
                     className: "fontSize font-size bolt-table-two-line-cell-item wrap-text",
@@ -416,6 +478,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                             endDate={tableItem.lastRunData.endTime}
                         />
                     ),
+                    condition: !(!tableItem.lastRunData.startTime),
                 })}
             />
         );
@@ -426,17 +489,25 @@ function WithIcon(props: {
     className?: string;
     iconProps: IIconProps;
     children?: React.ReactNode;
+    condition?: boolean;
 }): JSX.Element {
+    if ((props?.condition ?? true) == true) {
+        return (
+            <div className={css(props.className, "flex-row flex-center")}>
+                {Icon({ ...props.iconProps, className: "icon-margin" })}
+                {props.children}
+            </div>
+        );
+    }
+
     return (
         <div className={css(props.className, "flex-row flex-center")}>
-            {Icon({ ...props.iconProps, className: "icon-margin" })}
-            {props.children}
         </div>
     );
 }
 
 
-function initialsIdentityProvider(commitData:any): IIdentityDetailsProvider {
+function initialsIdentityProvider(commitData: any): IIdentityDetailsProvider {
     return ({
         getDisplayName() {
             return commitData.committer.name;
@@ -449,6 +520,15 @@ function initialsIdentityProvider(commitData:any): IIdentityDetailsProvider {
 
 
 function humanReadableTimeDiff(startDate: Date, endDate: Date, language: string) {
+    if (!startDate) {
+        debugger;
+        return '';
+    }
+
+    if (!endDate) {
+        endDate = new Date();
+    }
+
     const timeIntervals = [31536000, 2628000, 604800, 86400, 3600, 60, 1];
     const intervalNames = ['year', 'month', 'week', 'day', 'hour', 'minute', 'second'];
     const formatter = new Intl.RelativeTimeFormat(language, { numeric: 'auto' });

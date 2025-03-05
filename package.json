@@ -37,6 +37,7 @@
     "react-dom": "^16.14.0"
   },
   "devDependencies": {
+    "@microsoft/signalr": "^8.0.7",
     "@types/node": "^22.13.4",
     "@types/react": "^16.9.8",
     "@types/react-dom": "^16.9.8",

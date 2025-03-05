@@ -17,7 +17,14 @@ This tab is inspired to **Azure Devops Build runs** and it contains a simple gri
 
 # Version history
 
-**0.1.0**: Initial preview version
+**0.1.0-0.1.2**: Initial preview versions
 - Known bugs:
     - The extensions is working fine, yet there are still some inconsistencies in the user interface, notwithstanding the fact I used the [Azure Devops global styles provided by the documentation](https://developer.microsoft.com/it-it/azure-devops/develop/extensions).
     - The column sorting must be fixed.
+
+**0.1.3**:
+    - added autorefresh on pushes to pull request source branch using SignalR events
+    - minor bugfixes on code and ui
+    - Known bugs:
+        - There are still some inconsistencies in the user interface, scss is not applied.
+        - The column sorting must be fixed.
