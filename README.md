@@ -9,17 +9,17 @@ In my work experience I worked with both Azure Devops and Jenkins pipelines and,
 
 This tab is inspired to **Azure Devops Build runs** and it contains a simple grid with one row for every integration build generated since the creation fo the pull request made up of these columns:
 -   **Pipeline**: this column contains the Azure Devops Pipeline triggered by the continous integration including its id. This grid cell is clickable and you will be redirected to all builds runs of this pipeline.
--   **Last run**: this column is made of two rows:
+-   **Last run**: this column consists of two rows:
     - The upper one contains the build number and the commit message of the commit which triggered the build. This cell is clickable and you will be redirected to the results of the build run.
     - The lower one contains the id of the commit which triggered the build and the user who performed the commit. This cell is clickable and you will be redirected to the detail of the commit.
--   **Stages**: this column contains a clickable the result of the build and it is clickable with a hyperlink to build logs.
+-   **Stages**: this column contains the result of the build and it is clickable with a hyperlink to build logs.
 -   **Time and duration**: this column contains the build start time, end time and duration in a human readable format.
 
 **Features:**
-- The grid is scrollable
 - You can sort any of the four columns in ascending or descending order.
-- Most of the cells have also a tooltip.
 - This tab supports autorefresh, e.g. whenever a new commit is pushed to the pull request branch thanks to its integration with Azure Devops SignalR websocket events.
+- Most of the cells have also a tooltip.
+- The grid is scrollable
 
 # Version history
 
