@@ -28,7 +28,7 @@ This tab is inspired to **Azure Devops Build runs** and it contains a simple gri
     - The extensions is working fine, yet there are still some inconsistencies in the user interface, notwithstanding the fact I used the [Azure Devops global styles provided by the documentation](https://developer.microsoft.com/it-it/azure-devops/develop/extensions).
     - The column sorting must be fixed.
 
-**0.1.3**: (officially it did not work, probably to wrong extension packaging setting in manifest)
+**0.1.3**: officially it did not work, probably to wrong extension packaging setting in manifest
 - added autorefresh on pushes to pull request source branch using SignalR events
 - minor bugfixes on code and ui
 
