@@ -1,5 +1,5 @@
 //@use "/node_modules/azure-devops-ui/Core/_platformCommon.scss" as devops;
-@use "/node_modules/azure-devops-ui/Core/override.scss";
+@use "/node_modules/azure-devops-ui/Core/override.scss" as devops;
 
 #root {
     height: 100%;
@@ -7,14 +7,13 @@
     display: flex;
 }
 
-/*body {
-    background-color: $neutral-2;
+body {
+    background-color: rgba(248,248,248,1);
 }
-*/
-/*.page-content {
-    background-color: $neutral-0;
+
+.page-content {
+    background-color: rgba(255,255,255,1);
 }
-*/
 
 .sample-form-section {
     margin-top: 20px;

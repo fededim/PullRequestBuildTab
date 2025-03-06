@@ -228,7 +228,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
     public render(): JSX.Element {
         return (
             <Card
-                className="flex-grow bolt-table-card"
+                className="flex-grow bolt-table-card bolt-card-white"
                 contentProps={{ contentPadding: false }}
                 titleProps={{ text: "Pipelines runs" }}
             >
