@@ -15,7 +15,7 @@ This tab is inspired to **Azure Devops Build runs** and it contains a simple gri
 -   **Stages**: this column contains a clickable the result of the build and it is clickable with a hyperlink to build logs.
 -   **Time and duration**: this column contains the build start time, end time and duration in a human readable format.
 
-Features:
+**Features:**
 - The grid is scrollable
 - You can sort any of the four columns in ascending or descending order.
 - Most of the cells have also a tooltip.
