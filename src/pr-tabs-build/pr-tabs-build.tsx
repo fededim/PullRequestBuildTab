@@ -200,8 +200,8 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             const extensionContext = await SDK.getExtensionContext();
             const hostContext = SDK.getHost();
             const pullRequestUpdateService = await SDK.getService(PullRequestUpdateServiceId);
-            const accessToken = await SDK.getAccessToken()
-            const appToken = await SDK.getAppToken()
+            const accessToken = '' // await SDK.getAccessToken()
+            const appToken = '' // await SDK.getAppToken()
 
             const navRoute = await hostNavigationService.getPageRoute();
             const pullRequestId = Number(navRoute.routeValues.parameters);

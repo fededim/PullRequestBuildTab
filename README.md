@@ -43,3 +43,6 @@ This tab is inspired to **Azure Devops Build runs** and it contains a simple gri
 
 **1.0.2**: 
 - No changes just updated readme
+
+**1.0.3**: 
+- Removed calls to retrieve accessToken and appToken (not needed) in order to optimize load time
