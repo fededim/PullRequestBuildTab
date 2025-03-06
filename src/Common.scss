@@ -1,4 +1,5 @@
-@use "/node_modules/azure-devops-ui/Core/_platformCommon.scss" as devops;
+//@use "/node_modules/azure-devops-ui/Core/_platformCommon.scss" as devops;
+@use "/node_modules/azure-devops-ui/Core/override.scss";
 
 #root {
     height: 100%;
@@ -6,10 +7,38 @@
     display: flex;
 }
 
-body {
-    background-color: devops.$neutral-2;
+/*body {
+    background-color: $neutral-2;
+}
+*/
+/*.page-content {
+    background-color: $neutral-0;
+}
+*/
+
+.sample-form-section {
+    margin-top: 20px;
 }
 
-.page-content {
-    background-color: devops.$neutral-0;
+.table-example {
+    min-width: 500px;
+}
+
+.bolt-table-card {
+    width: 100%;
+}
+
+.wrap-text {
+    white-space: break-spaces;
+    word-break: break-all;
+}
+
+.valign-middle {
+    vertical-align: middle;
+}
+
+.floatright {
+    display: flex;
+    align-items: center;
+    column-gap: 5px;
 }

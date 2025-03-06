@@ -19,7 +19,7 @@ import { BuildResult, BuildStatus } from "azure-devops-extension-api/Build/Build
 interface IPipelineLastRun {
     startTime?: Date;
     endTime?: Date;
-    duration: () => string;
+    duration: number;
     lastRunId: number;
     prId: number;
     runName: string;
@@ -42,6 +42,41 @@ export interface IPipelineItem {
 interface IStatusIndicatorData {
     statusProps: IStatusProps;
     label: string;
+}
+
+
+export function buildStatusResultToNumber(pipeline: IPipelineItem): number {
+
+    switch (pipeline.status) {
+        case BuildStatus.None:
+            return 0;
+        case BuildStatus.NotStarted:
+            return 1;
+        case BuildStatus.Postponed:
+            return 2;
+        case BuildStatus.Cancelling:
+            return 3;
+        case BuildStatus.InProgress:
+            return 4;
+
+        case BuildStatus.Completed:
+            switch (pipeline.result) {
+                case BuildResult.Canceled:
+                    return 5;
+                case BuildResult.Failed:
+                    return 6;
+                case BuildResult.PartiallySucceeded:
+                    return 7;
+                case BuildResult.Succeeded:
+                    return 8;
+
+                default:
+                    return 10;
+            }
+
+        default:
+            return 11;
+    }
 }
 
 export function getStatusIndicatorData(status: BuildStatus, result: BuildResult): IStatusIndicatorData {

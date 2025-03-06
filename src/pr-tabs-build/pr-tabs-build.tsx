@@ -4,6 +4,7 @@ import { HttpTransportType, HubConnection, HubConnectionBuilder, LogLevel, Messa
 import * as React from "react";
 import {
     getStatusIndicatorData,
+    buildStatusResultToNumber,
     IPipelineItem
 } from "./pr-tabs-build-data";
 
@@ -160,7 +161,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                         runName: `#${b.buildNumber} \u00b7 ${commitData.comment}`,
                         startTime: b.startTime,
                         endTime: b.finishTime,
-                        duration: () => humanReadableTimeDiff(b.startTime, b.finishTime, 'en'),
+                        duration: (!b.startTime) ? 1000000000 : ((b.finishTime ?? new Date()).getTime() - b.startTime.getTime()) / 1000,
                         commitData: commitData,
                         url: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build/results?buildId=${b.id}&view=results`
                     },
@@ -187,8 +188,6 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
         }
 
         //this.itemProvider.notify(this.itemProvider.value, "newData");
-
-        // TODO: fix ui styles
     }
 
 
@@ -243,6 +242,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                             containerClassName="h-scroll-auto"
                             itemProvider={observableProps.itemProvider}
                             showLines={true}
+                            scrollable={true}
                             onSelect={(event, data) => console.log("Selected Row - " + data.index)}
                             onActivate={(event, row) => console.log("Activated Row - " + row.index)}
                         />
@@ -269,7 +269,10 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             id: "lastRun",
             name: "Last run",
             renderCell: this.renderLastRunColumn,
-
+            sortProps: {
+                ariaLabelAscending: "Sorted A to Z",
+                ariaLabelDescending: "Sorted Z to A",
+            },
             width: -46,
         },
         {
@@ -278,6 +281,10 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             name: "Stages",
             readonly: true,
             renderCell: this.renderStageColumn,
+            sortProps: {
+                ariaLabelAscending: "Sorted A to Z",
+                ariaLabelDescending: "Sorted Z to A",
+            },
             width: -10,
         },
         {
@@ -286,6 +293,10 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             name: "Time and duration",
             readonly: true,
             renderCell: this.renderTimeInformationColumn,
+            sortProps: {
+                ariaLabelAscending: "Sorted A to Z",
+                ariaLabelDescending: "Sorted Z to A",
+            },
             width: -20,
         },
         /**
@@ -305,23 +316,40 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
 
     private sortingBehavior = new ColumnSorting<IPipelineItem>(
         (columnIndex: number, proposedSortOrder: SortOrder) => {
-            this.pipelineItems =
-                sortItems(
-                    columnIndex,
-                    proposedSortOrder,
-                    this.sortFunctions,
-                    this.columns,
-                    this.pipelineItems
-                );
+            sortItems(
+                columnIndex,
+                proposedSortOrder,
+                this.sortFunctions,
+                this.columns,
+                this.pipelineItems
+            );
+            this.itemProvider.value = new ArrayItemProvider(this.pipelineItems);
         }
     );
 
 
+
+
+
     private sortFunctions = [
-        // Sort on Name column
+        // Sort on Pipeline column
         (item1: IPipelineItem, item2: IPipelineItem) => {
-            return item1.name.localeCompare(item2.name!);
+            return item1.id < item2.id ? -1 : 1;
         },
+        // Sort on LastRun column
+        (item1: IPipelineItem, item2: IPipelineItem) => {
+            let maxDate = new Date(8640000000000000);
+
+            return (item1.lastRunData.startTime ?? maxDate) < (item2.lastRunData.startTime ?? maxDate) ? -1 : 1;
+        },
+        // Sort on Stages column
+        (item1: IPipelineItem, item2: IPipelineItem) => {
+            return (buildStatusResultToNumber(item1) < buildStatusResultToNumber(item2) ? -1 : 1);
+        },
+        // Sort on duration column
+        (item1: IPipelineItem, item2: IPipelineItem) => {
+            return (item1.lastRunData.duration < item2.lastRunData.duration) ? -1 : 1;
+        }
     ];
 
 
@@ -345,7 +373,8 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                         className="fontSizeM font-size-m bolt-table-link bolt-table-cell-content-with-inline-link"
                         tooltipProps={{ text: status.label }}
                         removeUnderline={true}
-                        onClick={(e) => parent.location.href = url}
+                        href={url}
+                        target={"_parent"}
                     >
                         <div>
                             <Status
@@ -381,7 +410,8 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                     className="fontSizeL font-size-l bolt-table-link bolt-table-inline-link"
                     tooltipProps={{ text: status.label }}
                     removeUnderline={true}
-                    onClick={(e) => parent.location.href = logUrl}
+                    href={logUrl}
+                    target={"_parent"}
                 >
                     <Status
                         {...status.statusProps}
@@ -413,7 +443,8 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                             className="fontSizeM font-size-m bolt-table-link bolt-table-inline-link"
                             tooltipProps={{ text: runName }}
                             removeUnderline={true}
-                            onClick={(e) => parent.location.href = url}
+                            href={url}
+                            target={"_parent"}
                         >
                             {runName}
                         </Link>
@@ -422,27 +453,37 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                 line2={
                     <>
                         <span className="fontSizeM font-size-m secondary-text flex-row flex-center">
+                            {WithIcon({
+                                className: "fontSize font-size bolt-table-two-line-cell-item wrap-text",
+                                iconProps: { iconName: "BranchCommit" },
+                                children: (
+                                    <Link
+                                        className="monospaced-text bolt-table-link bolt-table-inline-link"
+                                        tooltipProps={{ text: commitData.committer.date.toString() }}
+                                        excludeTabStop
+                                        href={commitData.commitUrl}
+                                        target={"_parent"}
+                                    >
+                                        {commitData.commitId.substring(0, 8)}
+                                    </Link>
+                                ),
+                                condition: undefined,
+                            })}
                             <Link
                                 className="monospaced-text bolt-table-link bolt-table-inline-link"
-                                tooltipProps={{ text: commitData.committer.date.toString() }}
+                                tooltipProps={{ text: commitData.committer.email.toString() }}
                                 excludeTabStop
-                                onClick={(e) => parent.location.href = commitData.commitUrl}
+                                href={commitData.commitUrl}
+                                target={"_parent"}
                             >
-                                {WithIcon({
-                                    className: "fontSize font-size bolt-table-two-line-cell-item wrap-text",
-                                    iconProps: { iconName: "BranchCommit" },
-                                    children: (
-                                        commitData.commitId.substring(0, 8)
-                                    ),
-                                    condition: undefined,
-                                })}
-
+                                <div className="persona-content floatright">
+                                    <VssPersona
+                                        identityDetailsProvider={initialsIdentityProvider(commitData)}
+                                        size={"small"}
+                                    />
+                                    {commitData.committer.name}
+                                </div>
                             </Link>
-                            <VssPersona
-                                identityDetailsProvider={initialsIdentityProvider(commitData)}
-                                size={"small"}
-                            />
-                            &nbsp;{commitData.committer.name}
                         </span>
                     </>
                 }
@@ -521,7 +562,6 @@ function initialsIdentityProvider(commitData: any): IIdentityDetailsProvider {
 
 function humanReadableTimeDiff(startDate: Date, endDate: Date, language: string) {
     if (!startDate) {
-        debugger;
         return '';
     }
 
