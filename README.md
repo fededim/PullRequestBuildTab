@@ -53,4 +53,4 @@ Last but not the least this extension is free and it has been released under MIT
 - No changes just updated readme
 
 **1.0.5**: 
-- Added missing <!DOCTYPE html> root tag in order to avoid quirks mode in browsers
+- Added missing \<!DOCTYPE html\> root tag in order to avoid quirks mode in browsers
