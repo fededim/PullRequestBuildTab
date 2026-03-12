@@ -54,3 +54,6 @@ Last but not the least this extension is free and it has been released under MIT
 
 **1.0.5**: 
 - Added missing \<!DOCTYPE html\> root tag in order to avoid quirks mode in browsers
+
+**1.0.6**: 
+- Removed hard coded https://dev.azure.com for compatibility with Azure Devops Server (on premise)
