@@ -36,7 +36,7 @@ import { ObservableValue } from "azure-devops-ui/Core/Observable";
 import { Observer } from "azure-devops-ui/Observer";
 import { CoreRestClient } from "azure-devops-extension-api/Core";
 
-import { CommonServiceIds, IProjectPageService, IHostNavigationService, IProjectInfo } from "azure-devops-extension-api";
+import { CommonServiceIds, IProjectPageService, IHostNavigationService, IProjectInfo, ILocationService } from "azure-devops-extension-api";
 import { BuildRestClient } from "azure-devops-extension-api/Build/BuildClient";
 import { GitRestClient } from "azure-devops-extension-api/Git/GitClient";
 import { NotificationRestClient } from "azure-devops-extension-api/Notification/NotificationClient";
@@ -56,6 +56,7 @@ interface IPullRequestTabGroupState {
     pullRequestId: number;
     projectName: string;
     gitRepositoryName: string;
+    hostBaseUrl: string;
 }
 
 const PullRequestUpdateServiceId: string = "ms.vss-code-web.pr-updates-service";
@@ -69,7 +70,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
 
     constructor(props: {}) {
         super(props);
-        this.state = { projectContext: undefined, extensionContext: undefined, hostContext: undefined, hostNavigationService: undefined, pullRequestUpdateService: undefined, accessToken: '', appToken: '', pullRequestId: 0, gitRepositoryName: '', projectName: '' };
+        this.state = { projectContext: undefined, extensionContext: undefined, hostContext: undefined, hostNavigationService: undefined, pullRequestUpdateService: undefined, accessToken: '', appToken: '', pullRequestId: 0, gitRepositoryName: '', projectName: '', hostBaseUrl:'' };
     }
 
 
@@ -151,7 +152,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
         if (builds?.length > 0) {
             this.pipelineItems = builds.map(b => {
                 var commitData = commitsDictionary[JSON.parse(b.parameters)["system.pullRequest.sourceCommitId"]];
-                commitData.commitUrl = `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_git/${b.repository.name}/commit/${commitData.commitId}?refName=${pullRequest.sourceRefName}`;
+                commitData.commitUrl = `${this.state.hostBaseUrl}${this.state.projectContext?.name}/_git/${b.repository.name}/commit/${commitData.commitId}?refName=${pullRequest.sourceRefName}`;
 
                 return {
                     favorite: new ObservableValue<boolean>(true),
@@ -163,14 +164,14 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
                         endTime: b.finishTime,
                         duration: (!b.startTime) ? 1000000000 : ((b.finishTime ?? new Date()).getTime() - b.startTime.getTime()) / 1000,
                         commitData: commitData,
-                        url: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build/results?buildId=${b.id}&view=results`
+                        url: `${this.state.hostBaseUrl}${this.state.projectContext?.name}/_build/results?buildId=${b.id}&view=results`
                     },
                     id: b.id,
                     name: b.definition.name,
                     status: b.status,
                     result: b.result,
-                    logUrl: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build/results?buildId=${b.id}&view=logs`,
-                    url: `https://dev.azure.com/${this.state.hostContext?.name}/${this.state.projectContext?.name}/_build?definitionId=${b.definition.id}&_a=summary`
+                    logUrl: `${this.state.hostBaseUrl}${this.state.projectContext?.name}/_build/results?buildId=${b.id}&view=logs`,
+                    url: `${this.state.hostBaseUrl}${this.state.projectContext?.name}/_build?definitionId=${b.definition.id}&_a=summary`
                 };
             }) as IPipelineItem[];
         }
@@ -196,6 +197,9 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
         try {
             const hostNavigationService = await SDK.getService<IHostNavigationService>(CommonServiceIds.HostNavigationService);
             const projectClient = await SDK.getService<IProjectPageService>(CommonServiceIds.ProjectPageService);
+            const locationService = await SDK.getService<ILocationService>(CommonServiceIds.LocationService);
+            const hostBaseUrl = await locationService.getResourceAreaLocation(CoreRestClient.RESOURCE_AREA_ID);
+
             const projectContext = await projectClient.getProject();
             const extensionContext = await SDK.getExtensionContext();
             const hostContext = SDK.getHost();
@@ -208,7 +212,7 @@ export default class PrTabsBuild extends React.Component<{}, IPullRequestTabGrou
             const projectName = navRoute.routeValues.project;
             const gitRepositoryName = navRoute.routeValues.GitRepositoryName;
 
-            this.setState({ projectContext: projectContext, extensionContext: extensionContext, hostContext: hostContext, hostNavigationService: hostNavigationService, pullRequestUpdateService: pullRequestUpdateService, accessToken: accessToken, appToken: appToken, pullRequestId: pullRequestId, projectName: projectName, gitRepositoryName: gitRepositoryName });
+            this.setState({ projectContext: projectContext, extensionContext: extensionContext, hostContext: hostContext, hostNavigationService: hostNavigationService, pullRequestUpdateService: pullRequestUpdateService, accessToken: accessToken, appToken: appToken, pullRequestId: pullRequestId, projectName: projectName, gitRepositoryName: gitRepositoryName, hostBaseUrl: hostBaseUrl });
 
             await this.subscribeEvents();
 
