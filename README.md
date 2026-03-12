@@ -57,3 +57,11 @@ Last but not the least this extension is free and it has been released under MIT
 
 **1.0.6**: 
 - Removed hard coded https://dev.azure.com for compatibility with Azure Devops Server (on premise)
+
+**1.0.7**: 
+- Bugfix: forgot to remove debug code from extension manifest
+
+**1.0.8**: 
+- Bugfix: forgot to update this readme file
+
+
